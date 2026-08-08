@@ -13,7 +13,7 @@
 const struct device *sht41_1_dev = DEVICE_DT_GET(DT_NODELABEL(sht41_1));
 const struct device *sht41_2_dev = DEVICE_DT_GET(DT_NODELABEL(sht41_2));
 
-// Specyfikacja kanału ADC oraz pinu sterującego z Devicetree (z rana004)
+// Specyfikacja kanału ADC oraz pinu sterującego z Devicetree (rana004)
 static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET_BY_IDX(DT_PATH(zephyr_user), 0);
 static const struct gpio_dt_spec vbat_en = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), vbat_enable_gpios);
 
@@ -86,7 +86,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 };
 
 // ==============================================================================
-// 1. LOGIKA BATERII Z RANA004
+// 1. LOGIKA BATERII Z RANA004 - odczyt co 120s
 // ==============================================================================
 int init_battery_measuring(void) {
     int err;
@@ -123,7 +123,7 @@ int read_battery_voltage(void) {
     return bat_mv;
 }
 
-// Timer obsługujący wysyłkę baterii (co 30 sekund)
+// Timer obsługujący wysyłkę baterii (co xx sekund)
 static void batt_work_handler(struct k_work *work) {
     if (current_conn) {
         // Włączamy dzielnik na czas pomiaru
@@ -145,11 +145,11 @@ static void batt_work_handler(struct k_work *work) {
             bt_gatt_notify(current_conn, &custom_sensor_svc.attrs[4], payload, sizeof(payload));
         }
     }
-    k_work_reschedule(&batt_work, K_SECONDS(30));
+    k_work_reschedule(&batt_work, K_SECONDS(120)); // kolejny odczyt za 120s
 }
 
 // ==============================================================================
-// 2. PĘTLA ODCZYTU CZUJNIKÓW SHT41 (co 60 sekund)
+// 2. PĘTLA ODCZYTU CZUJNIKÓW SHT41 (odczyt co 30 sekund)
 // ==============================================================================
 static void sensor_work_handler(struct k_work *work) {
     if (current_conn) {
@@ -187,8 +187,11 @@ static void sensor_work_handler(struct k_work *work) {
         // Wysłanie charakterystyki nr 1 (attrs[1])
         bt_gatt_notify(current_conn, &custom_sensor_svc.attrs[1], payload, sizeof(payload));
     }
-    k_work_reschedule(&sensor_work, K_SECONDS(60));
+    k_work_reschedule(&sensor_work, K_SECONDS(30)); // kolejny odczyt za 30 sekund
 }
+// ==============================================================================
+// 3. MAIN
+// ==============================================================================
 
 int main(void) {
     // 1. Inicjalizacja Twojego sprzętu ADC z rana004
@@ -206,8 +209,8 @@ int main(void) {
     bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
     
     k_work_reschedule(&adv_stop_work, K_SECONDS(30));
-    k_work_reschedule(&sensor_work, K_SECONDS(60));
-    k_work_reschedule(&batt_work, K_SECONDS(30)); // Start baterii co 30s
+    k_work_reschedule(&sensor_work, K_SECONDS(10)); // pierwszy odczyt sht po 10s
+    k_work_reschedule(&batt_work, K_SECONDS(20));   // pierwszy odczyt batt po 20s
 
     return 0;
 }
