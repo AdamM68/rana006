@@ -1,0 +1,91 @@
+#include <zephyr/dt-bindings/adc/adc.h>
+
+/* --- KONFIGURACJA PINÓW I2C (pinctrl) --- */
+&pinctrl {
+    /* MAGISTRALA I2C0 (Czujnik 1) - Piny: SDA = D4, SCL = D5 */
+    i2c0_default: i2c0_default {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 4)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 5)>;
+            bias-pull-up;
+        };
+    };
+    i2c0_sleep: i2c0_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 4)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 5)>;
+            low-power-enable;
+        };
+    };
+
+    /* MAGISTRALA I2C1 (Czujnik 2) - Piny: SDA = D2, SCL = D3 */
+    i2c1_default: i2c1_default {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 2)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 3)>;
+            bias-pull-up;
+        };
+    };
+    i2c1_sleep: i2c1_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 2)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 3)>;
+            low-power-enable;
+        };
+    };
+};
+
+/* --- ODCZYT BATERII (Sterowanie masą dzielnika) z rana004 --- */
+/ {
+    zephyr_user: zephyr,user {
+        io-channels = <&adc 7>;
+        vbat-enable-gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+    };
+};
+
+&adc {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    channel@7 {
+        reg = <7>;
+        zephyr,gain = "ADC_GAIN_1_6";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40)>;
+        zephyr,input-positive = <NRF_SAADC_AIN7>;
+        zephyr,resolution = <12>;
+    };
+};
+
+/* --- PRZYPISANIE URZĄDZEŃ DO MAGISTRALI I2C0 --- */
+&i2c0 {
+    status = "okay";
+    clock-frequency = <I2C_BITRATE_STANDARD>;
+
+    pinctrl-0 = <&i2c0_default>;
+    pinctrl-1 = <&i2c0_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    sht41_1: sht41@44 {
+        compatible = "sensirion,sht4x";
+        reg = <0x44>;
+        repeatability = <2>;
+    };
+};
+
+/* --- PRZYPISANIE URZĄDZEŃ DO MAGISTRALI I2C1 --- */
+&i2c1 {
+    status = "okay";
+    clock-frequency = <I2C_BITRATE_STANDARD>;
+
+    pinctrl-0 = <&i2c1_default>;
+    pinctrl-1 = <&i2c1_sleep>;
+    pinctrl-names = "default", "sleep";
+
+    sht41_2: sht41@44 {
+        compatible = "sensirion,sht4x";
+        reg = <0x44>;
+        repeatability = <2>;
+    };
+};
