@@ -2,6 +2,12 @@
 
 Projekt badawczo-rozwojowy dotyczący ciągłego pomiaru i analizy mikroklimatu (temperatury i wilgotności względnej) pod opatrunkiem rany. System wykorzystuje ultraprecyzyjne czujniki oraz mikrokontroler z łącznością Bluetooth Low Energy (BLE) do ciągłej rejestracji parametrów w czasie rzeczywistym.
 
+UWAGA : 11.08.2026
+-- projekt jest wciąż na etapie budowy, 
+-- nowe wersje programu w trakcie kompilacji,
+-- w planie udostępnienie skompilowanych plików .uf2 dla płytki xiao,
+-- w następnej kolejności publikacja uzyskanych pomiarów i analiza statystyczna wyników
+
 ---
 
 ## 📌 O projekcie
