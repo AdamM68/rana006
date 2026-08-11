@@ -4,9 +4,14 @@ Projekt badawczo-rozwojowy dotyczący ciągłego pomiaru i analizy mikroklimatu 
 
 UWAGA : 11.08.2026
 -- projekt jest wciąż na etapie budowy, 
--- nowe wersje programu w trakcie kompilacji,
+-- planuje dodanie timestamp dla łatwiejszej analizy pomiarów,
 -- w planie udostępnienie skompilowanych plików .uf2 dla płytki xiao,
 -- w następnej kolejności publikacja uzyskanych pomiarów i analiza statystyczna wyników
+-- dodanie zdjęć eksperymentu i detali technicznych 
+
+Zapraszam do kontaktu i wspólnego rozwijania projektu/eksperymentu
+
+dr n.med. Adam Mościcki  adam68.moscicki@gmail.com 
 
 ---
 
