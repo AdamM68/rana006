@@ -9,6 +9,8 @@
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
 
+// nRF SDK 3.4.0
+
 // Deklaracja czujników temperatury
 const struct device *sht41_1_dev = DEVICE_DT_GET(DT_NODELABEL(sht41_1));
 const struct device *sht41_2_dev = DEVICE_DT_GET(DT_NODELABEL(sht41_2));
