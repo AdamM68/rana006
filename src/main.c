@@ -154,7 +154,7 @@ static void batt_work_handler(struct k_work *work) {
 static void sensor_work_handler(struct k_work *work) {
     if (current_conn) {
         struct sensor_value temp, hum;
-        uint8_t payload[8];
+        uint8_t payload[12];
         
         // CZUJNIK 1
         if (sht41_1_dev && sensor_sample_fetch(sht41_1_dev) == 0) {
@@ -184,6 +184,16 @@ static void sensor_work_handler(struct k_work *work) {
             payload[6] = err_val & 0xFF; payload[7] = (err_val >> 8) & 0xFF;
         }
 
+        // --- DODANO: Znak czasu (Timestamp w SEKUNDACH) ---
+        // Pobieramy czas od uruchomienia urządzenia i konwertujemy na sekundy
+        uint32_t uptime_sec = k_uptime_get_32() / 1000;
+        
+        // Pakowanie 32-bitowej liczby (Little Endian)
+        payload[8] = uptime_sec & 0xFF;
+        payload[9] = (uptime_sec >> 8) & 0xFF;
+        payload[10] = (uptime_sec >> 16) & 0xFF;
+        payload[11] = (uptime_sec >> 24) & 0xFF;
+        
         // Wysłanie charakterystyki nr 1 (attrs[1])
         bt_gatt_notify(current_conn, &custom_sensor_svc.attrs[1], payload, sizeof(payload));
     }
