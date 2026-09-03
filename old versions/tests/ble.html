@@ -1,0 +1,345 @@
+from pathlib import Path
+
+html = r'''<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLE ADV Monitor - XIAO nRF52840</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #f5f5f5;
+        color: #222;
+    }
+    h1 {
+        margin-bottom: 8px;
+    }
+    button {
+        padding: 10px 16px;
+        margin-right: 8px;
+        font-size: 15px;
+        cursor: pointer;
+    }
+    #status {
+        margin: 12px 0;
+        padding: 10px;
+        background: white;
+        border: 1px solid #ccc;
+    }
+    .panel {
+        background: white;
+        border: 1px solid #ccc;
+        padding: 12px;
+        margin-top: 12px;
+    }
+    #log {
+        height: 430px;
+        overflow: auto;
+        background: #111;
+        color: #eee;
+        padding: 10px;
+        font-family: Consolas, monospace;
+        font-size: 13px;
+        white-space: pre-wrap;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 8px;
+        background: white;
+    }
+    th, td {
+        border: 1px solid #ccc;
+        padding: 6px 8px;
+        text-align: left;
+    }
+    th {
+        background: #eee;
+    }
+    .good {
+        color: #087f23;
+        font-weight: bold;
+    }
+    .warn {
+        color: #a05a00;
+        font-weight: bold;
+    }
+    .error {
+        color: #a00000;
+        font-weight: bold;
+    }
+    code {
+        background: #eee;
+        padding: 2px 4px;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>BLE ADV Monitor</h1>
+<div>
+    <button id="startBtn">Start skanowania</button>
+    <button id="stopBtn">Stop</button>
+    <button id="clearBtn">Wyczyść</button>
+</div>
+
+<div id="status">Status: gotowy</div>
+
+<div class="panel">
+    <b>Ostatni odebrany pakiet</b>
+    <table>
+        <tr><td>Czas</td><td id="lastTime">-</td></tr>
+        <tr><td>Urządzenie</td><td id="lastName">-</td></tr>
+        <tr><td>ID urządzenia</td><td id="lastId">-</td></tr>
+        <tr><td>RSSI</td><td id="lastRssi">-</td></tr>
+        <tr><td>Manufacturer ID</td><td id="lastCompany">-</td></tr>
+        <tr><td>Manufacturer Data</td><td id="lastMfg">-</td></tr>
+        <tr><td>Odstęp od poprzedniego pakietu</td><td id="lastDelta">-</td></tr>
+    </table>
+</div>
+
+<div class="panel">
+    <b>Zdekodowane dane Twojego pakietu</b>
+    <table>
+        <tr><td>Temperatura SHT41 #1</td><td id="t1">-</td></tr>
+        <tr><td>Wilgotność SHT41 #1</td><td id="h1">-</td></tr>
+        <tr><td>Temperatura SHT41 #2</td><td id="t2">-</td></tr>
+        <tr><td>Wilgotność SHT41 #2</td><td id="h2">-</td></tr>
+        <tr><td>Timestamp</td><td id="timestamp">-</td></tr>
+        <tr><td>Bateria</td><td id="battery">-</td></tr>
+    </table>
+</div>
+
+<div class="panel">
+    <b>Log odebranych pakietów</b>
+    <div id="log"></div>
+</div>
+
+<script>
+"use strict";
+
+let scan = null;
+let lastPacketTime = null;
+let packetCount = 0;
+
+const statusEl = document.getElementById("status");
+const logEl = document.getElementById("log");
+
+function setStatus(text, cls = "") {
+    statusEl.className = cls;
+    statusEl.textContent = "Status: " + text;
+}
+
+function nowText() {
+    return new Date().toLocaleTimeString("pl-PL", {
+        hour12: false,
+        fractionalSecondDigits: 3
+    });
+}
+
+function bytesToHex(bytes) {
+    return [...bytes]
+        .map(b => b.toString(16).padStart(2, "0").toUpperCase())
+        .join(" ");
+}
+
+function int16LE(bytes, index) {
+    const v = bytes[index] | (bytes[index + 1] << 8);
+    return v & 0x8000 ? v - 0x10000 : v;
+}
+
+function uint32LE(bytes, index) {
+    return (
+        (bytes[index]) |
+        (bytes[index + 1] << 8) |
+        (bytes[index + 2] << 16) |
+        (bytes[index + 3] << 24)
+    ) >>> 0;
+}
+
+function addLogLine(text) {
+    const line = document.createElement("div");
+    line.textContent = text;
+    logEl.appendChild(line);
+
+    while (logEl.childNodes.length > 1000) {
+        logEl.removeChild(logEl.firstChild);
+    }
+
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function updateDecoded(data14) {
+    // Web Bluetooth manufacturerData gives us the bytes after company ID.
+    // Your firmware sends:
+    // bytes 0..1   = FF FF (company/manufacturer ID)
+    // bytes 2..5   = SHT41 #1 T/H
+    // bytes 6..9   = SHT41 #2 T/H
+    // bytes 10..13 = timestamp
+    // bytes 14..15 = battery
+    //
+    // Therefore, after Web Bluetooth removes the company ID,
+    // data14 should contain 14 bytes:
+    // [T1L T1H H1L H1H T2L T2H H2L H2H TS0 TS1 TS2 TS3 BatL BatH]
+
+    if (data14.length < 14) {
+        return;
+    }
+
+    const bytes = new Uint8Array(data14);
+
+    const t1 = int16LE(bytes, 0) / 100.0;
+    const h1 = int16LE(bytes, 2) / 100.0;
+    const t2 = int16LE(bytes, 4) / 100.0;
+    const h2 = int16LE(bytes, 6) / 100.0;
+    const ts = uint32LE(bytes, 8);
+    const batt = int16LE(bytes, 12);
+
+    document.getElementById("t1").textContent = t1.toFixed(2) + " °C";
+    document.getElementById("h1").textContent = h1.toFixed(2) + " %";
+    document.getElementById("t2").textContent = t2.toFixed(2) + " °C";
+    document.getElementById("h2").textContent = h2.toFixed(2) + " %";
+    document.getElementById("timestamp").textContent = ts + " s";
+    document.getElementById("battery").textContent = batt + " mV";
+}
+
+function handleAdvertisement(event) {
+    packetCount++;
+
+    const time = performance.now();
+    let delta = "-";
+
+    if (lastPacketTime !== null) {
+        delta = (time - lastPacketTime).toFixed(1) + " ms";
+    }
+
+    lastPacketTime = time;
+
+    const wallTime = nowText();
+    const deviceName = event.device?.name || "(brak nazwy)";
+    const deviceId = event.device?.id || "(brak ID)";
+    const rssi = event.rssi ?? "-";
+
+    let manufacturerFound = false;
+
+    for (const [companyId, dataView] of event.manufacturerData) {
+        manufacturerFound = true;
+
+        const dataBytes = new Uint8Array(
+            dataView.buffer,
+            dataView.byteOffset,
+            dataView.byteLength
+        );
+
+        const hex = bytesToHex(dataBytes);
+        const companyHex = companyId.toString(16).padStart(4, "0").toUpperCase();
+
+        document.getElementById("lastTime").textContent = wallTime;
+        document.getElementById("lastName").textContent = deviceName;
+        document.getElementById("lastId").textContent = deviceId;
+        document.getElementById("lastRssi").textContent = rssi + " dBm";
+        document.getElementById("lastCompany").textContent = "0x" + companyHex;
+        document.getElementById("lastMfg").textContent = hex;
+        document.getElementById("lastDelta").textContent = delta;
+
+        // Our firmware uses 0xFFFF as the first two bytes of mfg_data,
+        // so Web Bluetooth should normally expose company ID 0xFFFF.
+        if (companyId === 0xFFFF && dataBytes.length >= 14) {
+            updateDecoded(dataBytes);
+
+            addLogLine(
+                `${wallTime} | #${packetCount} | ` +
+                `${rssi} dBm | company 0x${companyHex} | ` +
+                `${hex} | delta ${delta}`
+            );
+        } else {
+            addLogLine(
+                `${wallTime} | #${packetCount} | ` +
+                `${rssi} dBm | company 0x${companyHex} | ` +
+                `${hex}`
+            );
+        }
+    }
+
+    if (!manufacturerFound) {
+        addLogLine(
+            `${wallTime} | #${packetCount} | ${rssi} dBm | brak Manufacturer Data`
+        );
+    }
+}
+
+async function startScan() {
+    if (!navigator.bluetooth) {
+        setStatus(
+            "Ta przeglądarka nie udostępnia Web Bluetooth API.",
+            "error"
+        );
+        return;
+    }
+
+    if (!navigator.bluetooth.requestLEScan) {
+        setStatus(
+            "requestLEScan() nie jest dostępne. W Chrome włącz funkcje eksperymentalne.",
+            "error"
+        );
+        return;
+    }
+
+    try {
+        if (scan) {
+            scan.stop();
+            scan = null;
+        }
+
+        lastPacketTime = null;
+
+        navigator.bluetooth.addEventListener(
+            "advertisementreceived",
+            handleAdvertisement
+        );
+
+        scan = await navigator.bluetooth.requestLEScan({
+            acceptAllAdvertisements: true,
+            keepRepeatedDevices: true
+        });
+
+        setStatus("skanowanie aktywne - nasłuchuję wszystkich reklam BLE", "good");
+    } catch (err) {
+        console.error(err);
+        setStatus("błąd uruchamiania skanowania: " + err, "error");
+    }
+}
+
+function stopScan() {
+    try {
+        if (scan) {
+            scan.stop();
+            scan = null;
+        }
+    } catch (err) {
+        console.error(err);
+    }
+
+    setStatus("skanowanie zatrzymane", "warn");
+}
+
+document.getElementById("startBtn").addEventListener("click", startScan);
+document.getElementById("stopBtn").addEventListener("click", stopScan);
+document.getElementById("clearBtn").addEventListener("click", () => {
+    logEl.innerHTML = "";
+    packetCount = 0;
+    lastPacketTime = null;
+    setStatus("log wyczyszczony");
+});
+</script>
+
+</body>
+</html>
+'''
+
+path = Path("/mnt/data/ble_adv_monitor_xiao.html")
+path.write_text(html, encoding="utf-8")
+print(path)
