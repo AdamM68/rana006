@@ -152,9 +152,9 @@ static void sensor_work_handler(struct k_work *work) {
     //bt_le_adv_stop();
 
     // bt_le_adv_update_data(ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
-
-    // Kolejny odczyt za 30 sekund
-    k_work_reschedule(&sensor_work, K_SECONDS(5));
+    int err = bt_le_adv_update_data(ad, ARRAY_SIZE(ad), NULL, 0);
+    // Kolejny odczyt za 3 sekundy
+    k_work_reschedule(&sensor_work, K_SECONDS(3));
 }
 
 static void bt_ready(int err)
@@ -168,8 +168,8 @@ static void bt_ready(int err)
         .sid = 0,
         .secondary_max_skip = 0,
         .options = BT_LE_ADV_OPT_USE_IDENTITY,  //BT_LE_ADV_OPT_SCANNABLE |
-        .interval_min = 0x00A0,
-        .interval_max = 0x00F0,
+        .interval_min = 0x0640,    // 0x00A0
+        .interval_max = 0x0640,   // 1 sekunda
         .peer = NULL,
     };
 
@@ -184,14 +184,14 @@ static void bt_ready(int err)
 // 3. MAIN
 // ==============================================================================
 int main(void) {
-    //init_battery_measuring();
-    //gpio_pin_set_dt(&vbat_en, 0);
+    init_battery_measuring();
+    gpio_pin_set_dt(&vbat_en, 0);
 
-    //k_work_init_delayable(&sensor_work, sensor_work_handler);
+    k_work_init_delayable(&sensor_work, sensor_work_handler);
     
     bt_enable(bt_ready);
     
-    //k_work_reschedule(&sensor_work, K_SECONDS(1)); 
+    k_work_reschedule(&sensor_work, K_SECONDS(1)); 
 
     return 0;
 }
