@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>XIAO BLE SHT41 Monitor </title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    max-width:800px;
+    margin:auto;
+    background:#f2f2f2;
+    padding:10px;
+}
+.card{
+    background:white;
+    padding:15px;
+    margin:10px 0;
+    border-radius:12px;
+    box-shadow:0 2px 5px #ccc;
+}
+button{
+    padding:10px 15px;
+    margin:3px;
+    border-radius:8px;
+    border:0;
+    background:#1976d2;
+    color:white;
+    font-size:15px;
+    cursor:pointer;
+}
+button:hover{
+    opacity:.8;
+}
+.val{
+    font-size:32px;
+    font-weight:bold;
+}
+.ok{
+    color:green;
+    font-weight:bold;
+}
+.err{
+    color:red;
+    font-weight:bold;
+}
+#history{
+    height:180px;
+    overflow:auto;
+    background:#eee;
+    font-family:monospace;
+    padding:8px;
+    font-size: 14px;
+}
+canvas{
+    width:100%;
+    height:220px;
+    background:white;
+    border:1px solid #aaa;
+    border-radius:8px;
+}
+.grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap: 10px;
+    font-size: 18px;
+}
+.big{
+    font-size:20px;
+}
+.timestamp-box {
+    grid-column: span 2;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    text-align: center;
+    color: #555;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+    <h2>XIAO BLE MONITOR</h2>
+    <div style="margin-bottom: 10px;">
+        Status: <span id="status" class="err">Rozłączony</span>
+    </div>
+    <button onclick="connect()">Połącz</button>
+    <button onclick="disconnect()">Rozłącz</button>
+</div>
+
+<div class="card">
+    <h3>Bateria</h3>
+    <div class="val" id="battery">---</div>
+</div>
+
+<div class="card">
+    <h3>Pomiary SHT41</h3>
+    <div class="grid">
+        <div>Temp 1: <span id="v1" class="val" style="font-size: 24px;">-</span> &deg;C</div>
+        <div>Wilg 1: <span id="v2" class="val" style="font-size: 24px;">-</span> %</div>
+        <div>Temp 2: <span id="v3" class="val" style="font-size: 24px;">-</span> &deg;C</div>
+        <div>Wilg 2: <span id="v4" class="val" style="font-size: 24px;">-</span> %</div>
+        
+        <div class="timestamp-box">
+            Uptime urządzenia: <strong id="timestamp">---</strong> s
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Statystyka pakietów</h3>
+    <div class="grid">
+        <div class="big">Bateria: <span id="batCount">0</span></div>
+        <div class="big">Dane SHT: <span id="dataCount">0</span></div>
+        <div>Ostatni BAT: <span id="lastBat">---</span></div>
+        <div>Ostatni SHT: <span id="lastData">---</span></div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Wykres baterii</h3>
+    <canvas id="batteryChart" width="700" height="220"></canvas>
+</div>
+
+<div class="card">
+    <h3>Wykres Temperatury / Wilgotności</h3>
+    <canvas id="dataChart" width="700" height="220"></canvas>
+</div>
+
+<div class="card">
+    <h3>Historia</h3>
+    <button onclick="saveCSV()">Zapisz CSV</button>
+    <button onclick="clearHistory()">Wyczyść</button>
+    <div id="history"></div>
+</div>
+
+<script>
+const SERVICE_UUID = "12345678-1234-5678-1234-56789abcdef0";
+const DATA_UUID    = "12345678-1234-5678-1234-56789abcdef1";
+const BATTERY_UUID = "12345678-1234-5678-1234-56789abcdef2";
+
+let device = null;
+let reconnect = true;
+let batteryCharacteristic;
+let dataCharacteristic;
+
+let batCount = 0;
+let dataCount = 0;
+let lastBatTime = 0;
+let lastDataTime = 0;
+
+let csv = [];
+let batteryValues = [];
+let chValues = [[], [], [], []];
+
+function log(t) {
+    let h = document.getElementById("history");
+    let tm = new Date().toLocaleTimeString();
+    h.innerHTML = tm + " " + t + "<br>" + h.innerHTML;
+    csv.push(tm + "," + t);
+}
+
+async function connect() {
+    try {
+        reconnect = true;
+        statusText("Łączenie...");
+
+        device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [SERVICE_UUID]
+        });
+
+        device.addEventListener("gattserverdisconnected", lostConnection);
+        await connectGATT();
+    } catch(e) {
+        console.log(e);
+        statusText("Błąd lub anulowano");
+    }
+}
+
+async function connectGATT() {
+    let server = await device.gatt.connect();
+    let service = await server.getPrimaryService(SERVICE_UUID);
+
+    // Bateria (2 bajty)
+    batteryCharacteristic = await service.getCharacteristic(BATTERY_UUID);
+    await batteryCharacteristic.startNotifications();
+    batteryCharacteristic.addEventListener("characteristicvaluechanged", batteryNotify);
+
+    // Czujniki (12 bajtów)
+    dataCharacteristic = await service.getCharacteristic(DATA_UUID);
+    await dataCharacteristic.startNotifications();
+    dataCharacteristic.addEventListener("characteristicvaluechanged", dataNotify);
+
+    statusText("Połączony", true);
+    log("BLE CONNECTED");
+}
+
+function lostConnection() {
+    statusText("Utracono połączenie");
+    if(reconnect) {
+        setTimeout(() => {
+            if(device && !device.gatt.connected) connectGATT();
+        }, 5000);
+    }
+}
+
+function disconnect() {
+    reconnect = false;
+    if(device && device.gatt.connected) {
+        device.gatt.disconnect();
+    }
+    statusText("Rozłączony");
+}
+
+function batteryNotify(e) {
+    // getInt16 dla zachowania zgodności (np. błąd -9999 z kodu c)
+    let v = e.target.value.getInt16(0, true);
+    
+    let txt = (v === -9999) ? "BŁĄD" : v + " mV";
+    document.getElementById("battery").textContent = txt;
+
+    batCount++;
+    document.getElementById("batCount").textContent = batCount;
+    lastBatTime = Date.now();
+
+    log("BAT: " + txt);
+
+    if(v !== -9999) {
+        batteryValues.push(v);
+        if(batteryValues.length > 100) batteryValues.shift();
+        drawBatteryChart();
+    }
+}
+
+function dataNotify(e) {
+    let dv = e.target.value;
+    let vals = [];
+
+    // Odczyt 4 pomiarów jako int16_t (możliwe wartości ujemne)
+    for(let i = 0; i < 4; i++) {
+        let raw = dv.getInt16(i * 2, true);
+        
+        // Jeśli wartość to -9999 (błąd sprzętowy), to zostawiamy flagę błędu
+        if(raw === -9999) {
+            vals[i] = -9999;
+            document.getElementById("v" + (i+1)).textContent = "ERR";
+            document.getElementById("v" + (i+1)).className = "val err";
+        } else {
+            // Dzielimy przez 100, bo main.c mnożył przez 100
+            vals[i] = raw / 100.0;
+            document.getElementById("v" + (i+1)).textContent = vals[i].toFixed(2);
+            document.getElementById("v" + (i+1)).className = "val ok";
+        }
+    }
+
+    // Odczyt znacznika czasu uint32_t (4 bajty) - zaczyna się od bajtu 8
+    let timestamp = dv.getUint32(8, true);
+    document.getElementById("timestamp").textContent = timestamp;
+
+    dataCount++;
+    document.getElementById("dataCount").textContent = dataCount;
+    lastDataTime = Date.now();
+
+    // Zapis dla wykresów (ignorujemy wartości błędne -9999)
+    for(let i = 0; i < 4; i++) {
+        if(vals[i] !== -9999) {
+            chValues[i].push(vals[i]);
+            if(chValues[i].length > 100) chValues[i].shift();
+        }
+    }
+    
+    drawDataChart();
+
+    let logTxt = `SHT1: ${vals[0]}&deg;C ${vals[1]}% | SHT2: ${vals[2]}&deg;C ${vals[3]}% | TS: ${timestamp}s`;
+    log(logTxt);
+}
+
+function statusText(t, ok = false) {
+    let s = document.getElementById("status");
+    s.textContent = t;
+    s.className = ok ? "ok" : "err";
+}
+
+function saveCSV() {
+    let text = "czas,dane\n" + csv.join("\n");
+    let blob = new Blob([text], { type: "text/csv" });
+    let a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "xiao_ble_pomiary.csv";
+    a.click();
+}
+
+function clearHistory() {
+    document.getElementById("history").innerHTML = "";
+    csv = [];
+}
+
+function drawBatteryChart() {
+    let c = document.getElementById("batteryChart");
+    let ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    if(batteryValues.length < 2) return;
+
+    let min = Math.min(...batteryValues);
+    let max = Math.max(...batteryValues);
+    if(max === min) { min -= 100; max += 100; }
+
+    ctx.beginPath();
+    for(let i = 0; i < batteryValues.length; i++) {
+        let x = i * c.width / (batteryValues.length - 1 || 1);
+        let y = c.height - ((batteryValues[i] - min) / (max - min)) * c.height;
+        
+        // Marginesy żeby linia nie dotykała brzegów
+        y = y * 0.8 + (c.height * 0.1); 
+
+        if(i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = "blue";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+}
+
+function drawDataChart() {
+    let c = document.getElementById("dataChart");
+    let ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    let all = [];
+    for(let i = 0; i < 4; i++) all.push(...chValues[i]);
+    if(all.length < 2) return;
+
+    let min = Math.min(...all);
+    let max = Math.max(...all);
+    if(max === min) { min -= 5; max += 5; }
+
+    let colors = ["red", "blue", "orange", "cyan"];
+
+    for(let ch = 0; ch < 4; ch++) {
+        if(chValues[ch].length < 2) continue;
+        ctx.beginPath();
+        for(let i = 0; i < chValues[ch].length; i++) {
+            let x = i * c.width / (chValues[ch].length - 1 || 1);
+            let y = c.height - ((chValues[ch][i] - min) / (max - min)) * c.height;
+            
+            y = y * 0.8 + (c.height * 0.1);
+
+            if(i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = colors[ch];
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+}
+
+setInterval(() => {
+    if(lastBatTime) {
+        document.getElementById("lastBat").textContent = 
+            Math.floor((Date.now() - lastBatTime)/1000) + " s temu";
+    }
+    if(lastDataTime) {
+        document.getElementById("lastData").textContent = 
+            Math.floor((Date.now() - lastDataTime)/1000) + " s temu";
+    }
+}, 1000);
+
+</script>
+
+</body>
+</html>
