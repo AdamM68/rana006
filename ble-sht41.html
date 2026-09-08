@@ -156,11 +156,20 @@ let csv = [];
 let batteryValues = [];
 let chValues = [[], [], [], []];
 
-function log(t) {
+function log(uiText, csvData) {
     let h = document.getElementById("history");
     let tm = new Date().toLocaleTimeString();
-    h.innerHTML = tm + " " + t + "<br>" + h.innerHTML;
-    csv.push(tm + "," + t);
+    
+    // 1. Zwykły tekst wyświetlany w białym okienku "Historia" na stronie
+    h.innerHTML = tm + " " + uiText + "<br>" + h.innerHTML;
+    
+    // 2. Format CSV dla Excela
+    if (csvData) {
+        csv.push(tm + ";" + csvData);
+    } else {
+        // Przypadek np. dla "BLE CONNECTED" - wrzuca tekst, a resztę kolumn zostawia pustą
+        csv.push(tm + ";" + uiText + ";;;;;"); 
+    }
 }
 
 async function connect() {
@@ -217,9 +226,7 @@ function disconnect() {
 }
 
 function batteryNotify(e) {
-    // getInt16 dla zachowania zgodności (np. błąd -9999 z kodu c)
     let v = e.target.value.getInt16(0, true);
-    
     let txt = (v === -9999) ? "BŁĄD" : v + " mV";
     document.getElementById("battery").textContent = txt;
 
@@ -227,7 +234,14 @@ function batteryNotify(e) {
     document.getElementById("batCount").textContent = batCount;
     lastBatTime = Date.now();
 
-    log("BAT: " + txt);
+    // --- NOWY SYSTEM ZAPISU DO LOGU ---
+    let uiTxt = "BAT: " + txt;
+    
+    let batVal = (v === -9999) ? "ERR" : v;
+    // 5 średników oznacza pominięcie kolumn z czujnikami, wrzucamy pomiar prosto do ostatniej kolumny baterii
+    let csvTxt = `;;;;;${batVal}`; 
+    
+    log(uiTxt, csvTxt);
 
     if(v !== -9999) {
         batteryValues.push(v);
@@ -275,8 +289,22 @@ function dataNotify(e) {
     
     drawDataChart();
 
-    let logTxt = `SHT1: ${vals[0]}&deg;C ${vals[1]}% | SHT2: ${vals[2]}&deg;C ${vals[3]}% | TS: ${timestamp}s`;
-    log(logTxt);
+    // --- NOWY SYSTEM ZAPISU DO LOGU ---
+    
+    // Zamieniamy kropki na przecinki dla Excela (toFixed(2) upewnia nas, że zawsze są 2 miejsca po przecinku)
+    let t1 = vals[0] === -9999 ? "ERR" : vals[0].toFixed(2).replace('.', ',');
+    let h1 = vals[1] === -9999 ? "ERR" : vals[1].toFixed(2).replace('.', ',');
+    let t2 = vals[2] === -9999 ? "ERR" : vals[2].toFixed(2).replace('.', ',');
+    let h2 = vals[3] === -9999 ? "ERR" : vals[3].toFixed(2).replace('.', ',');
+
+    // Wersja czytelna dla człowieka do podglądu na stronie
+    let uiTxt = `SHT1: ${vals[0]}&deg;C ${vals[1]}% | SHT2: ${vals[2]}&deg;C ${vals[3]}% | TS: ${timestamp}s`;
+    
+    // Wersja w kolumnach dla Excela: Temp1 ; Wilg1 ; Temp2 ; Wilg2 ; Uptime ; Bateria (puste)
+    let csvTxt = `${t1};${h1};${t2};${h2};${timestamp};`;
+    
+    log(uiTxt, csvTxt);
+
 }
 
 function statusText(t, ok = false) {
@@ -286,8 +314,13 @@ function statusText(t, ok = false) {
 }
 
 function saveCSV() {
-    let text = "czas,dane\n" + csv.join("\n");
-    let blob = new Blob([text], { type: "text/csv" });
+    // Nagłówki oddzielone średnikami
+    let header = "Czas;Temp 1 [°C];Wilg 1 [%];Temp 2 [°C];Wilg 2 [%];Uptime [s];Bateria [mV]\n";
+    
+    // \uFEFF to znacznik BOM, wymusza na Excelu czytanie pliku jako UTF-8
+    let text = "\uFEFF" + header + csv.join("\n");
+    
+    let blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
     let a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "xiao_ble_pomiary.csv";
