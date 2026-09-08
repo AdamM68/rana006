@@ -3,6 +3,7 @@
 # 🌡️ Mikroklimat pod opatrunkiem rany: 24-godzinny eksperyment z systemem monitorowania BLE
 
 ---
+![Temp&Humid BLE monitor](images/bluth.jpg)
 
 ## 🇵🇱 Wersja Polska
 
