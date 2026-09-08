@@ -1,10 +1,10 @@
-# 🌡️ Microclimate Under Wound Dressing: 24h BLE Monitoring System
+# 🌡️ Microclimate Under Wound Dressing: 24h BLE Monitoring System Experiment
 
 Projekt badawczo-rozwojowy dotyczący ciągłego pomiaru i analizy mikroklimatu (temperatury i wilgotności względnej) pod opatrunkiem rany. System wykorzystuje ultraprecyzyjne czujniki oraz mikrokontroler z łącznością Bluetooth Low Energy (BLE) do ciągłej rejestracji parametrów w czasie rzeczywistym.
 
 UWAGA : 11.08.2026
 -- projekt jest wciąż na etapie budowy, 
--- planuje dodanie timestamp dla łatwiejszej analizy pomiarów,
+-- planuje dodanie timestamp dla łatwiejszej analizy pomiarów ... ok, zrobione 
 -- w planie udostępnienie skompilowanych plików .uf2 dla płytki xiao,
 -- w następnej kolejności publikacja uzyskanych pomiarów i analiza statystyczna wyników
 -- dodanie zdjęć eksperymentu i detali technicznych 
@@ -33,7 +33,7 @@ Projekt ten służy do weryfikacji hipotezy, **czy stosowanie opatrunku wprowadz
 
 ## 🛠️ Architektura sprzętowa i specyfikacja
 
-* **Mikrokontroler:** `nRF52840` (Nordic Semiconductor)
+* **Mikrokontroler:** `nRF52840` (Nordic Semiconductor) *( Xiao nRF52840 )*
   * Wysoka wydajność energetyczna i wbudowane wsparcie dla BLE 5.0+.
   * Niewielki rozmiar umożliwiający komfortowy montaż na ciele badanego.
 * **Czujniki środowiskowe:** 2x `Sensirion SHT41`
@@ -73,4 +73,6 @@ Zbierane dane pozwalają na:
    * Zephyr RTOS / nRF Connect SDK / Arduino IDE z rdzeniem nRF52.
 3. **Kroki:**
    * Wgraj firmware umieszczony w katalogu `/firmware`. // do zrobienia
-   * Uruchom aplikację nRF Logger 
+   * Uruchom aplikację nRF Logger lub dedykowany loger: ble-sht41.html 
+   * Uwaga ! Android może blokować długie utrzymanie połączenia Web-BLE przez stronę html. Osobiście udało mi sie utrzymać aktywne połączenie - logowanie przez planowany czas 24h. Być może zawdzięczam to podłączeniu smartfona do zasilania - w takiej konfiguracji Android może utzrymywać połączenie BLE dłużej. W razie kłopotów z utrzymaniem dłuzszego połączenia - logowania poprzez stronę ble.sht41.html należy użyć aplikacji nRF Connect + nRF Logger a następnie przygotować plik logu do dalszej analizy porzez skrypt python, który umiesciłem w katalogu serwisowym.
+   * Analiza danych ...
